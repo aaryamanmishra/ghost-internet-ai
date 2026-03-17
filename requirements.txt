@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+requests
+beautifulsoup4
+duckduckgo-search>=6.0.0
+pydantic
+gradientai
+python-dotenv
