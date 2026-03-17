@@ -1,16 +1,44 @@
-# Ghost Internet — AI Archaeologist 👻
+# Ghost Internet — AI Future Lab 👻
 
 **A DigitalOcean Gradient AI Hackathon Project**
 
-The Ghost Internet AI Archaeologist is an AI-powered full-stack web application designed to scour the web for forgotten, abandoned, or overlooked ideas, analyze them using a Gradient AI Agent, and propose modern technological revivals. 
+Ghost Internet — AI Future Lab is an AI-powered full-stack web application designed to uncover forgotten, abandoned, or overlooked ideas, evaluate why they failed, and simulate potential technological futures if revived today.
+
+It preserves the original working pipeline:
+
+User Query → Search → Gather/Scrape Text → AI Analysis → Structured Output
 
 ## 🛠️ Architecture Overview
 
 - **Backend:** Python + FastAPI
-- **Web Scraping Pipeline:** duckduckgo-search + BeautifulSoup. Securely fetches real-time historical forum and internet context based on user queries.
-- **AI Engine:** DigitalOcean Gradient AI Agent integration. Processes the scraped text and returns a highly structured analytical payload.
-- **Frontend:** Vanilla JS + CSS3 + HTML5. Features dynamic Glassmorphism styling, clean animations, and structured rendering. Fully responsive.
+- **Free Source Pipeline (default):**
+  - **Wikipedia API** (stable extracts, no scraping required)
+  - **Internet Archive Advanced Search** (historical artifacts + metadata)
+  - **GitHub Search API** (engineering context + repo metadata)
+  - Optional best-effort HTML extraction via **BeautifulSoup** for some URLs
+- **Legacy Fallback Search:** DuckDuckGo (best-effort; may be blocked depending on network/bot gating)
+- **AI Engine:** DigitalOcean Gradient AI integration (with a robust fallback response if not configured).
+- **Frontend:** Vanilla JS + CSS3 + HTML5 with a card-based layout for structured sections. Fully responsive.
 - **Deployment:** Dockerized and ready for DigitalOcean App Platform.
+
+## ✨ What the Future Lab Generates
+
+For each topic, the system returns structured sections:
+
+- **Idea**
+- **Historian Analysis**
+- **Engineer Analysis**
+- **Futurist Analysis**
+- **Consensus Summary**
+
+Plus metrics and simulations:
+
+- **Revival Probability** (0–100%)
+- **Feasibility Score** (1–10)
+- **Impact Score** (1–10)
+- **Key Breakthrough Needed**
+- **Innovation Tree**
+- **Future Timeline**
 
 ## 🚀 Setup Instructions
 
@@ -18,12 +46,17 @@ The Ghost Internet AI Archaeologist is an AI-powered full-stack web application 
 Ensure you have Python 3.9+ and Docker installed on your machine.
 
 ### 2. Environment Variables
-To connect to DigitalOcean Gradient AI safely, you must set the following environment variables.
+To connect to DigitalOcean Gradient AI, set:
 
 Create a `.env` file in the root directory (or export them to your shell):
 ```env
 GRADIENT_ACCESS_TOKEN=your_gradient_access_token_here
 GRADIENT_WORKSPACE_ID=your_gradient_workspace_id_here
+# Optional: override the base model slug
+GRADIENT_BASE_MODEL_SLUG=llama3-8b-chat
+
+# Optional but recommended (improves GitHub search rate limits)
+GITHUB_TOKEN=your_github_token_here
 ```
 
 ### 3. How to Run Locally
@@ -41,9 +74,9 @@ GRADIENT_WORKSPACE_ID=your_gradient_workspace_id_here
    ```
 4. Start the application using Uvicorn:
    ```bash
-   uvicorn backend.main:app --host 0.0.0.0 --port 8080 --reload
+   python -m uvicorn backend.main:app --reload
    ```
-5. Navigate to `http://localhost:8080` in your browser.
+5. Navigate to `http://127.0.0.1:8000` in your browser.
 
 **Using Docker:**
 ```bash
@@ -68,7 +101,7 @@ This application is ready out-of-the-box for the DO App Platform.
 ## 🔮 Demo Use Case
 
 1. Navigate to the web application.
-2. Enter `"forgotten robotics inventions"` in the "e.g., forgotten renewable energy inventions" input field.
+2. Enter `"abandoned transportation technologies"` (or any topic) in the input field.
 3. Click **Unearth**.
-4. The system will search, scrape, and trigger the agent to analyze the findings.
-5. The result card displays the original context, reasoning for failure, modern AI-driven revival ideas, and the potential impact of modernizing the solution!
+4. The system gathers free sources (Wikipedia/Archive/GitHub), optionally extracts additional page text, and triggers the Future Lab analysis.
+5. The UI displays the expert panel, revival metrics, an innovation tree, a future timeline, and clickable sources.
