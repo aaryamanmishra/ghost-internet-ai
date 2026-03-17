@@ -47,8 +47,11 @@
                     <div class="pulse-dot"></div> AI Analysis Complete
                 </div>
 
-                <div id="aiIdeaDescription" class="idea-description">
-                    <!-- Idea description injected here -->
+                <div class="idea-header-row">
+                    <div id="aiIdeaDescription" class="idea-description">
+                        <!-- Idea description injected here -->
+                    </div>
+                    <button type="button" id="saveBtn" class="secondary-btn" disabled>Save</button>
                 </div>
 
                 <div class="metrics-container">
@@ -66,6 +69,17 @@
                     </div>
                 </div>
                 
+                <div class="two-col-cards">
+                    <div class="card">
+                        <h3 class="section-title">Technology Readiness Level</h3>
+                        <div id="trlValue" class="card-text">--</div>
+                    </div>
+                    <div class="card">
+                        <h3 class="section-title">Missing Technologies</h3>
+                        <ul id="missingTechList" class="simple-list"></ul>
+                    </div>
+                </div>
+
                 <div class="breakthrough-banner">
                     <div class="banner-title">🔑 Key Breakthrough Needed</div>
                     <div id="breakthroughNeed" class="banner-text">Scanning variables...</div>
@@ -93,6 +107,22 @@
                         <div class="consensus-body" id="consensusSummary">...</div>
                     </div>
                 </div>
+
+                <div class="two-col-cards">
+                    <div class="card">
+                        <h3 class="section-title">Research Papers</h3>
+                        <ul id="researchPapersList" class="link-list"></ul>
+                    </div>
+                    <div class="card">
+                        <h3 class="section-title">Patents</h3>
+                        <ul id="patentsList" class="link-list"></ul>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 class="section-title">Companies / Startups</h3>
+                    <ul id="companiesList" class="simple-list"></ul>
+                </div>
                 
                 <div class="visualization-container">
                     <div class="viz-section">
@@ -113,6 +143,16 @@
                 <div class="sources-section">
                     <h3>Sources</h3>
                     <ul id="sourcesList"></ul>
+                </div>
+
+                <div class="card">
+                    <h3 class="section-title">Detected Issues</h3>
+                    <ul id="issuesList" class="simple-list"></ul>
+                </div>
+
+                <div class="saved-section">
+                    <h3 class="section-title">Saved Ideas</h3>
+                    <ul id="savedIdeasList" class="saved-list"></ul>
                 </div>
             </div>
         </main>

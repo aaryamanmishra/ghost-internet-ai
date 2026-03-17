@@ -10,6 +10,13 @@ import json
 import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
+import asyncio
+import sqlite3
+from datetime import datetime, timezone
+
+from backend.paper_search import search_papers
+from backend.patent_search import search_patents
+from backend.company_search import search_companies
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
@@ -37,9 +44,45 @@ GRADIENT_BASE_MODEL_SLUG = os.getenv("GRADIENT_BASE_MODEL_SLUG", "llama3-8b-chat
 class DiscoverRequest(BaseModel):
     topic: str
 
+
+class SaveRequest(BaseModel):
+    topic: str
+    analysis: Dict[str, Any]
+
 DEFAULT_HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "ghost_internet.db")
+
+
+def _init_db() -> None:
+    """
+    Initializes SQLite tables if they don't exist.
+    """
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS saved_ideas (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              topic TEXT NOT NULL,
+              analysis TEXT NOT NULL,
+              timestamp TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        # Never crash the server for local persistence issues
+        logger.warning(f"Failed to initialize DB: {e}")
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    _init_db()
 
 
 def _safe_get_json(url: str, params: Dict[str, Any], timeout_s: int = 12) -> Optional[Dict[str, Any]]:
@@ -312,6 +355,33 @@ def collect_free_sources_and_context(topic: str, max_sources: int = 6) -> Tuple[
 
     return (deduped[:max_sources], "\n\n".join([c for c in chunks if c]).strip())
 
+
+def _build_discover_issues(
+    *,
+    sources: List[str],
+    context_text: str,
+    analysis_meta: Dict[str, Any],
+    research_papers: List[Dict[str, Any]],
+    related_patents: List[Dict[str, Any]],
+    related_companies: List[str],
+) -> List[str]:
+    issues: List[str] = []
+
+    if not sources:
+        issues.append("No source URLs were collected from the upstream providers.")
+    if len(context_text.strip()) < 100:
+        issues.append("Context gathering returned very little text, so the analysis quality may be weak.")
+    if analysis_meta.get("used_fallback"):
+        issues.append(f"AI analysis used the built-in fallback response: {analysis_meta.get('reason')}.")
+    if not research_papers:
+        issues.append("Research paper enrichment returned no results.")
+    if not related_patents:
+        issues.append("Patent enrichment returned no results.")
+    if not related_companies:
+        issues.append("Company/startup enrichment returned no results.")
+
+    return issues
+
 def scrape_text(url: str, max_length: int = 2000) -> str:
     """Extracts text content cleanly with timeout protection."""
     try:
@@ -394,7 +464,16 @@ def _normalize_future_lab_output(raw: Dict[str, Any], topic: str) -> Dict[str, A
     historian = (raw.get("historian_analysis") or "").strip()
     engineer = (raw.get("engineer_analysis") or "").strip()
     futurist = (raw.get("futurist_analysis") or "").strip()
-    consensus = (raw.get("consensus_summary") or "").strip()
+    consensus = (raw.get("consensus_summary") or raw.get("consensus") or "").strip()
+
+    technology_readiness_level = (raw.get("technology_readiness_level") or "").strip()
+    if not technology_readiness_level:
+        technology_readiness_level = "TRL 3 – Experimental proof of concept"
+
+    missing_technologies = _ensure_str_list(
+        raw.get("missing_technologies"),
+        fallback=["Advanced sensing/control systems", "Cost-effective manufacturing", "Reliable automation/safety validation"],
+    )
 
     revival_probability = _clamp_int(raw.get("revival_probability"), 0, 100, 50)
     feasibility_score = _clamp_int(raw.get("feasibility_score"), 1, 10, 5)
@@ -416,6 +495,8 @@ def _normalize_future_lab_output(raw: Dict[str, Any], topic: str) -> Dict[str, A
         "engineer_analysis": engineer or "Insufficient engineering details available from scraped sources.",
         "futurist_analysis": futurist or "Insufficient future projections available from scraped sources.",
         "consensus_summary": consensus or "Consensus could not be confidently derived from available evidence.",
+        "technology_readiness_level": technology_readiness_level,
+        "missing_technologies": missing_technologies,
         "feasibility_score": feasibility_score,
         "impact_score": impact_score,
         "key_breakthrough_needed": key_breakthrough_needed,
@@ -424,18 +505,22 @@ def _normalize_future_lab_output(raw: Dict[str, Any], topic: str) -> Dict[str, A
     # API contract + backward-compatible flat keys
     return {
         "analysis": analysis,
+        "technology_readiness_level": technology_readiness_level,
+        "missing_technologies": missing_technologies,
         "innovation_tree": innovation_tree,
         "revival_probability": revival_probability,
         "timeline": timeline,
         # Backward-compatible flat keys (existing frontend code used these)
         **analysis,
         "revival_probability": revival_probability,
+        "technology_readiness_level": technology_readiness_level,
+        "missing_technologies": missing_technologies,
         "innovation_tree": innovation_tree,
         "timeline": timeline,
     }
 
 
-def analyze_with_gradient_agent(topic: str, context_text: str) -> Dict[str, Any]:
+def analyze_with_gradient_agent(topic: str, context_text: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     """
     Acts as the multi-agent AI Future Lab using the Gradient AI.
     """
@@ -465,6 +550,12 @@ Return EXACTLY this JSON schema (same keys, compatible types):
   "engineer_analysis": "Analyze the technical reasons the idea failed and what engineering barriers existed.",
   "futurist_analysis": "Explain how modern technologies like AI, robotics, materials science, or biotechnology could revive the idea today.",
   "consensus_summary": "A short, authoritative final summary of the expert panel.",
+  "technology_readiness_level": "TRL X – short label (e.g., TRL 3 – Experimental proof of concept)",
+  "missing_technologies": [
+    "technology 1",
+    "technology 2",
+    "technology 3"
+  ],
   "revival_probability": 0,
   "feasibility_score": 1,
   "impact_score": 1,
@@ -492,6 +583,12 @@ Return EXACTLY this JSON schema (same keys, compatible types):
         "engineer_analysis": "Extreme initial infrastructure costs and a severe lack of compute power needed for real-time automation resulted in insurmountable engineering barriers at the time.",
         "futurist_analysis": "By integrating localized Edge AI models and autonomous drone networks, the core premise becomes both affordable and highly resilient today.",
         "consensus_summary": "While originally impossible to scale, modern AI and robotics make this a prime candidate for immediate technological trial runs.",
+        "technology_readiness_level": "TRL 4 – Technology validated in lab",
+        "missing_technologies": [
+            "Low-cost high-density edge computing",
+            "Certified multi-agent safety and verification tooling",
+            "Standardized infrastructure interfaces"
+        ],
         "revival_probability": 78,
         "feasibility_score": 6,
         "impact_score": 9,
@@ -512,7 +609,11 @@ Return EXACTLY this JSON schema (same keys, compatible types):
 
     if not GRADIENT_ACCESS_TOKEN or not GRADIENT_WORKSPACE_ID:
         logger.warning("Gradient configurations missing - using fallback response")
-        return _normalize_future_lab_output(fallback_response, topic)
+        return _normalize_future_lab_output(fallback_response, topic), {
+            "provider": "gradient",
+            "used_fallback": True,
+            "reason": "GRADIENT_ACCESS_TOKEN or GRADIENT_WORKSPACE_ID is missing",
+        }
 
     try:
         from gradientai import Gradient
@@ -531,43 +632,44 @@ Return EXACTLY this JSON schema (same keys, compatible types):
             parsed = json.loads(extracted)
             if not isinstance(parsed, dict):
                 raise ValueError("Model JSON was not an object.")
-            return _normalize_future_lab_output(parsed, topic)
+            return _normalize_future_lab_output(parsed, topic), {
+                "provider": "gradient",
+                "used_fallback": False,
+                "reason": None,
+            }
             
     except Exception as e:
         logger.error(f"Gradient API Inference Failed or Parse Error: {e}")
         # Return fallback on error to prevent crashing the endpoint during LLM hallucinations
-        return _normalize_future_lab_output(fallback_response, topic)
+        return _normalize_future_lab_output(fallback_response, topic), {
+            "provider": "gradient",
+            "used_fallback": True,
+            "reason": str(e),
+        }
 
 @app.post("/discover")
-def discover_endpoint(req: DiscoverRequest):
+async def discover_endpoint(req: DiscoverRequest):
     try:
         logger.info(f"Received query topic: {req.topic}")
 
         # Free "Option A" collection (Wikipedia + Archive + GitHub).
         # This avoids brittle DDG HTML scraping and bot-gating.
-        sources, context_text = collect_free_sources_and_context(req.topic, max_sources=7)
+        sources, context_text = await asyncio.to_thread(collect_free_sources_and_context, req.topic, 7)
 
         # Optional extra enrichment: try scraping the URLs we found for additional plain text.
         # This is best-effort and will not break the pipeline if blocked.
         combined_text = context_text + ("\n\n" if context_text else "")
         scraped_count = 0
         for url in sources:
-            extracted = scrape_text(url)
+            extracted = await asyncio.to_thread(scrape_text, url)
             if extracted and len(extracted) > 100:
                 combined_text += f"\n[SOURCE: {url}]\n{extracted}\n"
                 scraped_count += 1
             if scraped_count >= 3:
                 break
 
-        # Fallback: if we somehow got no sources (network offline), try legacy DDG.
-        if not sources:
-            sources = ddg_fallback_urls(req.topic, max_results=3)
-            for url in sources:
-                extracted = scrape_text(url)
-                if extracted and len(extracted) > 100:
-                    combined_text += f"\n[SOURCE: {url}]\n{extracted}\n"
-
-        # Add fallback text if extraction completely fails or returns too little text
+        # Add minimal context text if extraction completely fails or returns too little text.
+        # We keep this local safeguard so the request still completes, but we expose it in `issues`.
         if len(combined_text.strip()) < 100:
             logger.warning("Failed to extract context from free sources, using fallback text.")
             combined_text = (
@@ -576,20 +678,129 @@ def discover_endpoint(req: DiscoverRequest):
             )
 
         logger.info(f"Using context of length {len(combined_text)} across {len(sources)} sources.")
-        
-        analysis_dict = analyze_with_gradient_agent(req.topic, combined_text)
+
+        # Run independent research calls concurrently; never fail the endpoint if they fail.
+        analysis_task = asyncio.to_thread(analyze_with_gradient_agent, req.topic, combined_text)
+        papers_task = search_papers(req.topic, limit=5)
+        patents_task = search_patents(req.topic, limit=3)
+        companies_task = search_companies(req.topic, limit=5)
+
+        analysis_result, research_papers, related_patents, related_companies = await asyncio.gather(
+            analysis_task, papers_task, patents_task, companies_task, return_exceptions=True
+        )
+
+        if isinstance(analysis_result, Exception):
+            logger.warning(f"Analysis task failed: {analysis_result}")
+            analysis_dict = _normalize_future_lab_output({}, req.topic)
+            analysis_meta = {
+                "provider": "gradient",
+                "used_fallback": True,
+                "reason": str(analysis_result),
+            }
+        else:
+            analysis_dict, analysis_meta = analysis_result
+        if isinstance(research_papers, Exception):
+            logger.warning(f"Paper search failed: {research_papers}")
+            research_papers = []
+        if isinstance(related_patents, Exception):
+            logger.warning(f"Patent search failed: {related_patents}")
+            related_patents = []
+        if isinstance(related_companies, Exception):
+            logger.warning(f"Company search failed: {related_companies}")
+            related_companies = []
         
         # API response contract for Future Lab:
-        #   analysis, sources, innovation_tree, revival_probability, timeline
+        #   analysis, sources, research_papers, related_patents, related_companies,
+        #   technology_readiness_level, missing_technologies, innovation_tree, timeline
         # Plus backward-compatible flat keys for existing clients.
+        issues = _build_discover_issues(
+            sources=sources,
+            context_text=context_text,
+            analysis_meta=analysis_meta,
+            research_papers=research_papers,
+            related_patents=related_patents,
+            related_companies=related_companies,
+        )
         return {
             **analysis_dict,
-            "sources": sources
+            "sources": sources,
+            "research_papers": research_papers,
+            "related_patents": related_patents,
+            "related_companies": related_companies,
+            "issues": issues,
+            "provider_status": {
+                "analysis": analysis_meta,
+                "papers": {"provider": "openalex", "result_count": len(research_papers)},
+                "patents": {"provider": "patentsview", "result_count": len(related_patents)},
+                "companies": {"provider": "github", "result_count": len(related_companies)},
+            },
         }
     except Exception as e:
         logger.error(f"Server error during discover_endpoint: {e}")
         # Improve error handling by avoiding a crash
         raise HTTPException(status_code=500, detail="An internal server error occurred processing the discovery.")
+
+
+@app.post("/save")
+async def save_endpoint(req: SaveRequest):
+    """
+    Save an idea + analysis locally to SQLite. Never crashes on DB errors.
+    """
+    try:
+        topic = (req.topic or "").strip()
+        if not topic:
+            raise HTTPException(status_code=400, detail="Missing topic.")
+
+        analysis_json = json.dumps(req.analysis or {}, ensure_ascii=False)
+        ts = datetime.now(timezone.utc).isoformat()
+
+        def _write() -> int:
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute(
+                "INSERT INTO saved_ideas (topic, analysis, timestamp) VALUES (?, ?, ?)",
+                (topic, analysis_json, ts),
+            )
+            conn.commit()
+            new_id = int(cur.lastrowid)
+            conn.close()
+            return new_id
+
+        new_id = await asyncio.to_thread(_write)
+        return {"ok": True, "id": new_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"Save failed: {e}")
+        return {"ok": False, "id": None}
+
+
+@app.get("/saved")
+async def saved_endpoint():
+    """
+    Return saved ideas from SQLite. Never crashes on DB errors.
+    """
+    try:
+        def _read() -> List[Dict[str, Any]]:
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("SELECT id, topic, analysis, timestamp FROM saved_ideas ORDER BY id DESC LIMIT 50")
+            rows = cur.fetchall()
+            conn.close()
+            out: List[Dict[str, Any]] = []
+            for (id_, topic, analysis_text, timestamp) in rows:
+                try:
+                    analysis = json.loads(analysis_text) if analysis_text else {}
+                except Exception:
+                    analysis = {}
+                out.append({"id": id_, "topic": topic, "analysis": analysis, "timestamp": timestamp})
+            return out
+
+        items = await asyncio.to_thread(_read)
+        return {"items": items}
+    except Exception as e:
+        logger.warning(f"Read saved ideas failed: {e}")
+        return {"items": []}
 
 # Mount Frontend application
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

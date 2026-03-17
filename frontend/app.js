@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultsPanel = document.getElementById('resultsPanel');
     // We no longer need analysisContent as we target the specific ID's created
     const sourcesList = document.getElementById('sourcesList');
+    const saveBtn = document.getElementById('saveBtn');
+
+    let lastDiscovery = null;
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -18,6 +21,7 @@ document.addEventListener('DOMContentLoaded', () => {
         searchBtn.disabled = true;
         resultsPanel.classList.add('hidden');
         statusMessage.classList.remove('hidden');
+        saveBtn.disabled = true;
 
         try {
             const response = await fetch('/discover', {
@@ -34,14 +38,22 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const data = await response.json();
+            lastDiscovery = { topic, data };
             
             // Render Results passing the entire data object now instead of just the string
             renderAnalysis(data);
             renderSources(data.sources);
+            renderTechnology(data);
+            renderResearchPapers(data.research_papers);
+            renderPatents(data.related_patents);
+            renderCompanies(data.related_companies);
+            renderIssues(data.issues);
+            await refreshSavedIdeas();
 
             // UI State: Success
             statusMessage.classList.add('hidden');
             resultsPanel.classList.remove('hidden');
+            saveBtn.disabled = false;
 
         } catch (error) {
             console.error('Error:', error);
@@ -51,6 +63,31 @@ document.addEventListener('DOMContentLoaded', () => {
             // UI State: Reset Button
             searchBtn.classList.remove('loading');
             searchBtn.disabled = false;
+        }
+    });
+
+    saveBtn.addEventListener('click', async () => {
+        if (!lastDiscovery) return;
+        const { topic, data } = lastDiscovery;
+        const analysis = (data && data.analysis && typeof data.analysis === 'object') ? data.analysis : (data || {});
+
+        saveBtn.disabled = true;
+        try {
+            const resp = await fetch('/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ topic, analysis })
+            });
+            const payload = await resp.json();
+            if (!resp.ok || !payload.ok) {
+                throw new Error('Save failed.');
+            }
+            await refreshSavedIdeas();
+        } catch (e) {
+            console.error(e);
+            alert('Failed to save idea locally.');
+        } finally {
+            saveBtn.disabled = false;
         }
     });
 
@@ -103,6 +140,87 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function renderTechnology(data) {
+        const analysis = (data && data.analysis && typeof data.analysis === 'object') ? data.analysis : (data || {});
+
+        const trl = data.technology_readiness_level || analysis.technology_readiness_level || '--';
+        document.getElementById('trlValue').innerText = trl;
+
+        const missing = data.missing_technologies || analysis.missing_technologies;
+        const list = document.getElementById('missingTechList');
+        list.innerHTML = '';
+        if (missing && Array.isArray(missing) && missing.length) {
+            missing.forEach(item => {
+                const li = document.createElement('li');
+                li.innerText = item;
+                list.appendChild(li);
+            });
+        } else {
+            const li = document.createElement('li');
+            li.innerText = 'No missing technologies detected.';
+            list.appendChild(li);
+        }
+    }
+
+    function renderResearchPapers(papers) {
+        const list = document.getElementById('researchPapersList');
+        list.innerHTML = '';
+        if (!papers || !Array.isArray(papers) || papers.length === 0) {
+            const li = document.createElement('li');
+            li.innerText = 'No papers found (API may be unavailable).';
+            list.appendChild(li);
+            return;
+        }
+        papers.forEach(p => {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.href = p.url || '#';
+            const year = (p.year !== undefined && p.year !== null) ? ` (${p.year})` : '';
+            a.innerText = `${p.title || 'Untitled'}${year} — ${p.authors || 'Unknown'}`;
+            li.appendChild(a);
+            list.appendChild(li);
+        });
+    }
+
+    function renderPatents(patents) {
+        const list = document.getElementById('patentsList');
+        list.innerHTML = '';
+        if (!patents || !Array.isArray(patents) || patents.length === 0) {
+            const li = document.createElement('li');
+            li.innerText = 'No patents found.';
+            list.appendChild(li);
+            return;
+        }
+        patents.forEach(p => {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.target = '_blank';
+            a.rel = 'noopener noreferrer';
+            a.href = p.url || '#';
+            a.innerText = p.title || 'Patent result';
+            li.appendChild(a);
+            list.appendChild(li);
+        });
+    }
+
+    function renderCompanies(companies) {
+        const list = document.getElementById('companiesList');
+        list.innerHTML = '';
+        if (!companies || !Array.isArray(companies) || companies.length === 0) {
+            const li = document.createElement('li');
+            li.innerText = 'No companies detected.';
+            list.appendChild(li);
+            return;
+        }
+        companies.forEach(name => {
+            const li = document.createElement('li');
+            li.innerText = name;
+            list.appendChild(li);
+        });
+    }
+
     function renderSources(sources) {
         sourcesList.innerHTML = '';
         if (!sources || !Array.isArray(sources) || sources.length === 0) {
@@ -131,4 +249,60 @@ document.addEventListener('DOMContentLoaded', () => {
             sourcesList.appendChild(li);
         });
     }
+
+    function renderIssues(issues) {
+        const list = document.getElementById('issuesList');
+        if (!list) return;
+
+        list.innerHTML = '';
+        if (!issues || !Array.isArray(issues) || issues.length === 0) {
+            const li = document.createElement('li');
+            li.innerText = 'No issues detected for this run.';
+            list.appendChild(li);
+            return;
+        }
+
+        issues.forEach(issue => {
+            const li = document.createElement('li');
+            li.innerText = issue;
+            list.appendChild(li);
+        });
+    }
+
+    async function refreshSavedIdeas() {
+        const list = document.getElementById('savedIdeasList');
+        if (!list) return;
+        list.innerHTML = '';
+        try {
+            const resp = await fetch('/saved');
+            const data = await resp.json();
+            const items = data.items || [];
+            if (!Array.isArray(items) || items.length === 0) {
+                const li = document.createElement('li');
+                li.innerText = 'No saved ideas yet.';
+                list.appendChild(li);
+                return;
+            }
+
+            items.forEach(item => {
+                const li = document.createElement('li');
+                const topic = item.topic || 'Untitled';
+                li.innerText = topic;
+
+                const meta = document.createElement('div');
+                meta.className = 'saved-meta';
+                meta.innerText = item.timestamp ? `Saved: ${item.timestamp}` : '';
+                li.appendChild(meta);
+
+                list.appendChild(li);
+            });
+        } catch (e) {
+            const li = document.createElement('li');
+            li.innerText = 'Failed to load saved ideas.';
+            list.appendChild(li);
+        }
+    }
+
+    // Load saved ideas on initial page load
+    refreshSavedIdeas();
 });
