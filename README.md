@@ -1,107 +1,201 @@
-# Ghost Internet — AI Future Lab 👻
+# Ghost Internet - AI Future Lab
 
 **A DigitalOcean Gradient AI Hackathon Project**
 
-Ghost Internet — AI Future Lab is an AI-powered full-stack web application designed to uncover forgotten, abandoned, or overlooked ideas, evaluate why they failed, and simulate potential technological futures if revived today.
+Ghost Internet - AI Future Lab is a full-stack web app that uncovers overlooked or abandoned ideas, gathers public context about them, and simulates what their future could look like if modern technology revived them today.
 
-It preserves the original working pipeline:
+The app follows this pipeline:
 
-User Query → Search → Gather/Scrape Text → AI Analysis → Structured Output
+User Query -> Source Collection -> Context Extraction -> AI Analysis -> Structured Output
 
-## 🛠️ Architecture Overview
+## Architecture Overview
 
-- **Backend:** Python + FastAPI
-- **Free Source Pipeline (default):**
-  - **Wikipedia API** (stable extracts, no scraping required)
-  - **Internet Archive Advanced Search** (historical artifacts + metadata)
-  - **GitHub Search API** (engineering context + repo metadata)
-  - Optional best-effort HTML extraction via **BeautifulSoup** for some URLs
-- **Legacy Fallback Search:** DuckDuckGo (best-effort; may be blocked depending on network/bot gating)
-- **AI Engine:** DigitalOcean Gradient AI integration (with a robust fallback response if not configured).
-- **Frontend:** Vanilla JS + CSS3 + HTML5 with a card-based layout for structured sections. Fully responsive.
-- **Deployment:** Dockerized and ready for DigitalOcean App Platform.
+- **Backend:** FastAPI + Python
+- **Frontend:** Vanilla HTML, CSS, and JavaScript
+- **Primary source collection:**
+  - Wikipedia API
+  - Internet Archive Advanced Search
+  - GitHub Search API
+- **Research enrichment:**
+  - OpenAlex for research papers
+  - PatentsView PatentSearch API for patents
+  - GitHub organization search for company/startup-style signals
+- **Persistence:** local SQLite database for saved ideas
+- **AI engine:** DigitalOcean Gradient AI when configured, with an explicit fallback response when credentials are missing or inference fails
+- **Deployment:** Dockerized for local or platform deployment
 
-## ✨ What the Future Lab Generates
+## What the App Generates
 
-For each topic, the system returns structured sections:
+For each discovery request, the app returns:
 
-- **Idea**
-- **Historian Analysis**
-- **Engineer Analysis**
-- **Futurist Analysis**
-- **Consensus Summary**
+- Idea summary
+- Historian analysis
+- Engineer analysis
+- Futurist analysis
+- Consensus summary
+- Revival probability
+- Feasibility score
+- Impact score
+- Key breakthrough needed
+- Technology readiness level
+- Missing technologies
+- Innovation tree
+- Future timeline
+- Source links
+- Research papers
+- Related patents
+- Related companies/startups
+- Provider status and detected issues
 
-Plus metrics and simulations:
+## Current Feature Set
 
-- **Revival Probability** (0–100%)
-- **Feasibility Score** (1–10)
-- **Impact Score** (1–10)
-- **Key Breakthrough Needed**
-- **Innovation Tree**
-- **Future Timeline**
+### Discovery
 
-## 🚀 Setup Instructions
+- Accepts a topic from the UI
+- Collects public sources
+- Optionally scrapes additional plain text from collected URLs
+- Runs AI analysis over the assembled context
+- Returns structured results for the frontend
 
-### 1. Requirements
-Ensure you have Python 3.9+ and Docker installed on your machine.
+### Research Enrichment
 
-### 2. Environment Variables
-To connect to DigitalOcean Gradient AI, set:
+- Looks up research papers via OpenAlex
+- Looks up patents via PatentsView if an API key is configured
+- Looks up company/startup signals using GitHub organization search
 
-Create a `.env` file in the root directory (or export them to your shell):
+### Saved Ideas
+
+- Saves a topic and its analysis to SQLite
+- Displays the recent saved ideas list in the UI
+
+### Issue Reporting
+
+- Reports when the AI response came from fallback logic
+- Reports when paper, patent, or company enrichment returns no results
+- Exposes provider status data in the `/discover` response
+
+## API Endpoints
+
+### `POST /discover`
+
+Request body:
+
+```json
+{
+  "topic": "abandoned transportation technologies"
+}
+```
+
+Response includes:
+
+- `analysis`
+- `sources`
+- `research_papers`
+- `related_patents`
+- `related_companies`
+- `issues`
+- `provider_status`
+- Backward-compatible top-level analysis fields
+
+### `POST /save`
+
+Request body:
+
+```json
+{
+  "topic": "abandoned transportation technologies",
+  "analysis": {
+    "idea": "Example idea"
+  }
+}
+```
+
+### `GET /saved`
+
+Returns the most recent saved ideas from local SQLite storage.
+
+## Setup
+
+### Requirements
+
+- Python 3.9+
+- Docker, if you want to run the containerized version
+
+### Environment Variables
+
+Create a `.env` file in the project root or export these variables in your shell:
+
 ```env
+# Required for live Gradient analysis
 GRADIENT_ACCESS_TOKEN=your_gradient_access_token_here
 GRADIENT_WORKSPACE_ID=your_gradient_workspace_id_here
-# Optional: override the base model slug
+
+# Optional model override
 GRADIENT_BASE_MODEL_SLUG=llama3-8b-chat
 
-# Optional but recommended (improves GitHub search rate limits)
+# Optional but recommended for higher GitHub limits
 GITHUB_TOKEN=your_github_token_here
+
+# Required only if you want patent enrichment to work
+PATENTSVIEW_API_KEY=your_patentsview_api_key_here
 ```
 
-### 3. How to Run Locally
+### Run Locally
 
-**Using pure Python:**
-1. Clone the repository and navigate to the root directory `ghost-internet/`.
-2. Create and activate a Virtual Environment (Optional but recommended):
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-3. Install the dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-4. Start the application using Uvicorn:
-   ```bash
-   python -m uvicorn backend.main:app --reload
-   ```
-5. Navigate to `http://127.0.0.1:8000` in your browser.
+1. Clone the repository and move into the project folder.
+2. Create a virtual environment.
+3. Install dependencies.
+4. Start Uvicorn.
+5. Open the app in your browser.
 
-**Using Docker:**
+Example:
+
+```bash
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+python -m uvicorn backend.main:app --reload
+```
+
+Open:
+
+```text
+http://127.0.0.1:8000
+```
+
+### Run with Docker
+
 ```bash
 docker build -t ghost-internet .
-docker run -p 8080:8080 --env GRADIENT_ACCESS_TOKEN=your_token --env GRADIENT_WORKSPACE_ID=your_workspace ghost-internet
+docker run -p 8080:8080 \
+  --env GRADIENT_ACCESS_TOKEN=your_token \
+  --env GRADIENT_WORKSPACE_ID=your_workspace \
+  --env PATENTSVIEW_API_KEY=your_patentsview_key \
+  ghost-internet
 ```
 
-## ☁️ How to Deploy on DigitalOcean App Platform
+## Deployment Notes
 
-This application is ready out-of-the-box for the DO App Platform.
+For DigitalOcean App Platform or any similar deployment target:
 
-1. Push your code to a GitHub repository.
-2. In the DigitalOcean Control Panel, navigate to **Apps** -> **Create App**.
-3. Select your repository provider (GitHub) and pick your repo.
-4. DigitalOcean will automatically detect the `Dockerfile`.
-5. Under **Environment Variables**, click **Edit** and add:
-   - `GRADIENT_ACCESS_TOKEN`
-   - `GRADIENT_WORKSPACE_ID`
-6. Keep the HTTP Port at `8080`.
-7. Click **Deploy**. The application will automatically build and become accessible via a public URL!
+1. Push the repo to GitHub.
+2. Deploy from the included `Dockerfile`.
+3. Set environment variables for Gradient AI.
+4. Add `PATENTSVIEW_API_KEY` if you want patent results.
+5. Keep the service port at `8080`.
 
-## 🔮 Demo Use Case
+## Known Limitations
 
-1. Navigate to the web application.
-2. Enter `"abandoned transportation technologies"` (or any topic) in the input field.
-3. Click **Unearth**.
-4. The system gathers free sources (Wikipedia/Archive/GitHub), optionally extracts additional page text, and triggers the Future Lab analysis.
-5. The UI displays the expert panel, revival metrics, an innovation tree, a future timeline, and clickable sources.
+- If `GRADIENT_ACCESS_TOKEN` or `GRADIENT_WORKSPACE_ID` is missing, the app returns a built-in fallback analysis instead of live model output.
+- Patent enrichment requires `PATENTSVIEW_API_KEY`; without it, patent results will be empty.
+- Company/startup enrichment is best-effort and based on GitHub organization search, so results can be noisy or sparse.
+- OpenAlex paper search works without a key, but broad topics can still return loosely related papers.
+- HTML extraction from third-party pages is still best-effort and may fail depending on the target site.
+
+## Demo Flow
+
+1. Open the app.
+2. Enter a topic such as `abandoned transportation technologies`.
+3. Click `Unearth`.
+4. Review the analysis, metrics, enrichment results, sources, and detected issues.
+5. Click `Save` to store the result locally.
