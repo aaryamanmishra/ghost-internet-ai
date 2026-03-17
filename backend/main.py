@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import asyncio
 import sqlite3
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 
 from backend.paper_search import search_papers
 from backend.patent_search import search_patents
@@ -21,6 +22,8 @@ from backend.company_search import search_companies
 # Configure Logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 app = FastAPI(title="Ghost Internet - AI Future Lab")
 
@@ -33,13 +36,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def _env_first(*names: str) -> Optional[str]:
+    for name in names:
+        value = os.getenv(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
+# Current DigitalOcean serverless inference config
+GRADIENT_MODEL_ACCESS_KEY = _env_first("GRADIENT_MODEL_ACCESS_KEY", "GRADIENT_ACCESS_TOKEN")
+GRADIENT_WORKSPACE_ID = _env_first("GRADIENT_WORKSPACE_ID", "DigitalOcean Managed")
+GRADIENT_BASE_URL = _env_first("GRADIENT_BASE_URL") or "https://inference.do-ai.run/v1"
+
 # Gradient configuration
-# Keep backward-compatibility with any previously misconfigured env var usage:
-# - Prefer standard names: GRADIENT_ACCESS_TOKEN / GRADIENT_WORKSPACE_ID
-# - Fallback to the prior (incorrect) keys to avoid breaking existing deployments
-GRADIENT_ACCESS_TOKEN = os.getenv("GRADIENT_ACCESS_TOKEN") or os.getenv("pdjVWLm4wSD_yHRZl-wGA9dNi5AEbF0_")
-GRADIENT_WORKSPACE_ID = os.getenv("GRADIENT_WORKSPACE_ID") or os.getenv("DigitalOcean Managed")
-GRADIENT_BASE_MODEL_SLUG = os.getenv("GRADIENT_BASE_MODEL_SLUG", "llama3-8b-chat")
+# Prefer the documented current env names, but preserve compatibility with older local setup.
+GRADIENT_ACCESS_TOKEN = _env_first("GRADIENT_ACCESS_TOKEN", "pdjVWLm4wSD_yHRZl-wGA9dNi5AEbF0_")
+GRADIENT_BASE_MODEL_SLUG = _env_first("GRADIENT_BASE_MODEL_SLUG") or "llama3-8b-instruct"
 
 class DiscoverRequest(BaseModel):
     topic: str
@@ -607,36 +620,51 @@ Return EXACTLY this JSON schema (same keys, compatible types):
         ]
     }
 
-    if not GRADIENT_ACCESS_TOKEN or not GRADIENT_WORKSPACE_ID:
+    if not GRADIENT_MODEL_ACCESS_KEY:
         logger.warning("Gradient configurations missing - using fallback response")
         return _normalize_future_lab_output(fallback_response, topic), {
             "provider": "gradient",
             "used_fallback": True,
-            "reason": "GRADIENT_ACCESS_TOKEN or GRADIENT_WORKSPACE_ID is missing",
+            "reason": "GRADIENT_MODEL_ACCESS_KEY or GRADIENT_ACCESS_TOKEN is missing",
         }
 
     try:
-        from gradientai import Gradient
-        with Gradient(access_token=GRADIENT_ACCESS_TOKEN, workspace_id=GRADIENT_WORKSPACE_ID) as gradient:
-            agent_model = gradient.get_base_model(base_model_slug=GRADIENT_BASE_MODEL_SLUG)
-            response = agent_model.complete(
-                query=prompt,
-                max_generated_token_count=1000,
-                temperature=0.7
-            )
-            output = response.generated_output.strip()
+        response = requests.post(
+            f"{GRADIENT_BASE_URL}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {GRADIENT_MODEL_ACCESS_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": GRADIENT_BASE_MODEL_SLUG,
+                "messages": [
+                    {"role": "system", "content": "You are Ghost Internet - AI Future Lab. Return a single valid JSON object only."},
+                    {"role": "user", "content": prompt},
+                ],
+                "temperature": 0.7,
+                "max_completion_tokens": 1000,
+            },
+            timeout=45,
+        )
+        response.raise_for_status()
+        payload = response.json() or {}
+        choices = payload.get("choices") or []
+        if not choices or not isinstance(choices[0], dict):
+            raise ValueError("Inference response did not include choices.")
+        message = choices[0].get("message") or {}
+        output = (message.get("content") or "").strip()
 
-            extracted = _extract_json_object(output)
-            if not extracted:
-                raise ValueError("Model did not return valid JSON.")
-            parsed = json.loads(extracted)
-            if not isinstance(parsed, dict):
-                raise ValueError("Model JSON was not an object.")
-            return _normalize_future_lab_output(parsed, topic), {
-                "provider": "gradient",
-                "used_fallback": False,
-                "reason": None,
-            }
+        extracted = _extract_json_object(output)
+        if not extracted:
+            raise ValueError("Model did not return valid JSON.")
+        parsed = json.loads(extracted)
+        if not isinstance(parsed, dict):
+            raise ValueError("Model JSON was not an object.")
+        return _normalize_future_lab_output(parsed, topic), {
+            "provider": "gradient",
+            "used_fallback": False,
+            "reason": None,
+        }
             
     except Exception as e:
         logger.error(f"Gradient API Inference Failed or Parse Error: {e}")
@@ -731,7 +759,7 @@ async def discover_endpoint(req: DiscoverRequest):
             "provider_status": {
                 "analysis": analysis_meta,
                 "papers": {"provider": "openalex", "result_count": len(research_papers)},
-                "patents": {"provider": "patentsview", "result_count": len(related_patents)},
+                "patents": {"provider": "google_patents", "result_count": len(related_patents)},
                 "companies": {"provider": "github", "result_count": len(related_companies)},
             },
         }

@@ -18,10 +18,10 @@ User Query -> Source Collection -> Context Extraction -> AI Analysis -> Structur
   - GitHub Search API
 - **Research enrichment:**
   - OpenAlex for research papers
-  - PatentsView PatentSearch API for patents
+  - Temporary best-effort Google-based patent discovery
   - GitHub organization search for company/startup-style signals
 - **Persistence:** local SQLite database for saved ideas
-- **AI engine:** DigitalOcean Gradient AI when configured, with an explicit fallback response when credentials are missing or inference fails
+- **AI engine:** DigitalOcean Gradient AI serverless inference when configured, with an explicit fallback response when credentials are missing or inference fails
 - **Deployment:** Dockerized for local or platform deployment
 
 ## What the App Generates
@@ -60,7 +60,7 @@ For each discovery request, the app returns:
 ### Research Enrichment
 
 - Looks up research papers via OpenAlex
-- Looks up patents via PatentsView if an API key is configured
+- Looks up patents via a temporary free Google-based best-effort search path
 - Looks up company/startup signals using GitHub organization search
 
 ### Saved Ideas
@@ -126,18 +126,20 @@ Returns the most recent saved ideas from local SQLite storage.
 Create a `.env` file in the project root or export these variables in your shell:
 
 ```env
-# Required for live Gradient analysis
-GRADIENT_ACCESS_TOKEN=your_gradient_access_token_here
-GRADIENT_WORKSPACE_ID=your_gradient_workspace_id_here
+# Required for live DigitalOcean serverless inference
+GRADIENT_MODEL_ACCESS_KEY=your_gradient_model_access_key_here
+
+# Optional compatibility alias
+GRADIENT_ACCESS_TOKEN=your_gradient_model_access_key_here
 
 # Optional model override
-GRADIENT_BASE_MODEL_SLUG=llama3-8b-chat
+GRADIENT_BASE_MODEL_SLUG=llama3.3-70b-instruct
+
+# Optional base URL override
+GRADIENT_BASE_URL=https://inference.do-ai.run/v1
 
 # Optional but recommended for higher GitHub limits
 GITHUB_TOKEN=your_github_token_here
-
-# Required only if you want patent enrichment to work
-PATENTSVIEW_API_KEY=your_patentsview_api_key_here
 ```
 
 ### Run Locally
@@ -168,9 +170,7 @@ http://127.0.0.1:8000
 ```bash
 docker build -t ghost-internet .
 docker run -p 8080:8080 \
-  --env GRADIENT_ACCESS_TOKEN=your_token \
-  --env GRADIENT_WORKSPACE_ID=your_workspace \
-  --env PATENTSVIEW_API_KEY=your_patentsview_key \
+  --env GRADIENT_MODEL_ACCESS_KEY=your_model_access_key \
   ghost-internet
 ```
 
@@ -180,15 +180,16 @@ For DigitalOcean App Platform or any similar deployment target:
 
 1. Push the repo to GitHub.
 2. Deploy from the included `Dockerfile`.
-3. Set environment variables for Gradient AI.
-4. Add `PATENTSVIEW_API_KEY` if you want patent results.
+3. Set `GRADIENT_MODEL_ACCESS_KEY` for DigitalOcean serverless inference.
+4. Optionally set `GITHUB_TOKEN` to reduce GitHub search rate limiting.
 5. Keep the service port at `8080`.
 
 ## Known Limitations
 
-- If `GRADIENT_ACCESS_TOKEN` or `GRADIENT_WORKSPACE_ID` is missing, the app returns a built-in fallback analysis instead of live model output.
-- Patent enrichment requires `PATENTSVIEW_API_KEY`; without it, patent results will be empty.
+- If `GRADIENT_MODEL_ACCESS_KEY` is missing or invalid, the app returns a built-in fallback analysis instead of live model output.
+- Patent enrichment is still best-effort and can fail because Google blocks automated access patterns.
 - Company/startup enrichment is best-effort and based on GitHub organization search, so results can be noisy or sparse.
+- GitHub company search is more likely to degrade without `GITHUB_TOKEN` because of rate limiting.
 - OpenAlex paper search works without a key, but broad topics can still return loosely related papers.
 - HTML extraction from third-party pages is still best-effort and may fail depending on the target site.
 
