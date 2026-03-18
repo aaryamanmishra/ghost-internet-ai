@@ -60,7 +60,7 @@ For each discovery request, the app returns:
 ### Research Enrichment
 
 - Looks up research papers via OpenAlex
-- Looks up patents via a temporary free Google-based best-effort search path
+- Looks up patents via a temporary free Google-based best-effort search path and patentscope.wipo.int
 - Looks up company/startup signals using GitHub organization search
 
 ### Saved Ideas
@@ -133,7 +133,7 @@ GRADIENT_MODEL_ACCESS_KEY=your_gradient_model_access_key_here
 GRADIENT_ACCESS_TOKEN=your_gradient_model_access_key_here
 
 # Optional model override
-GRADIENT_BASE_MODEL_SLUG=llama3.3-70b-instruct
+GRADIENT_BASE_MODEL_SLUG=llama3-8b-instruct
 
 # Optional base URL override
 GRADIENT_BASE_URL=https://inference.do-ai.run/v1
