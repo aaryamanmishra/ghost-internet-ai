@@ -21,7 +21,7 @@ User Query -> Source Collection -> Context Extraction -> AI Analysis -> Structur
   - Temporary best-effort Google-based patent discovery
   - GitHub organization search for company/startup-style signals
 - **Persistence:** local SQLite database for saved ideas
-- **AI engine:** DigitalOcean Gradient AI serverless inference when configured, with an explicit fallback response when credentials are missing or inference fails
+- **AI Engine (Powered by DigitalOcean Gradient™ AI):** We leverage Gradient's serverless inference as the core reasoning engine. By utilizing `llama3-8b-instruct` via the Gradient API, the app effectively processes extremely dense context windows (from Wikipedia, OpenAlex, patents, etc.). It harnesses the model's instruction-following capabilities to simultaneously adopt multiple personas (Historian, Engineer, Futurist) and returns strictly formatted JSON to power the frontend dashboards. Offloading this heavily intensive inference to DigitalOcean's infrastructure keeps the FastAPI backend lightweight and responsive. (Falls back to default built-in analysis if credentials are missing).
 - **Deployment:** Dockerized for local or platform deployment
 
 ## What the App Generates
