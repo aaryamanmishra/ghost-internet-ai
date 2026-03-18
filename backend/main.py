@@ -555,7 +555,10 @@ STRICT OUTPUT RULES:
 - Do not output markdown, code fences, or any non-JSON text.
 - Use plain strings (no nested markdown).
 - Keep each analysis section concise but high-signal (4–8 sentences each).
-- YOUR SCORES (`revival_probability`, `feasibility_score`, `impact_score`) MUST BE DYNAMIC integers based strictly on your analysis, DO NOT copy the placeholder values!
+- YOUR SCORES MUST BE DYNAMIC integers based strictly on the following rubrics:
+  * revival_probability (0-100): 0 = never coming back, 50 = 50/50 chance, 100 = actively being deployed today.
+  * feasibility_score (1-10): 1 = physics/economics forbid it, 5 = possible but needs major trillions/breakthroughs, 10 = off-the-shelf parts exist today.
+  * impact_score (1-10): 1 = trivial novelty, 5 = disrupts a single industry, 10 = existential paradigm shift for humanity.
 
 Return EXACTLY this JSON schema (same keys, compatible types):
 {{
@@ -570,9 +573,9 @@ Return EXACTLY this JSON schema (same keys, compatible types):
     "technology 2",
     "technology 3"
   ],
-  "revival_probability": ,
-  "feasibility_score": ,
-  "impact_score": ,
+  "revival_probability": 0,
+  "feasibility_score": 5,
+  "impact_score": 5,
   "key_breakthrough_needed": "What technological breakthrough would make this idea viable.",
   "innovation_tree": [
     "Original idea name",
@@ -830,6 +833,31 @@ async def saved_endpoint():
     except Exception as e:
         logger.warning(f"Read saved ideas failed: {e}")
         return {"items": []}
+
+@app.delete("/saved/{item_id}")
+async def delete_saved_endpoint(item_id: int):
+    """
+    Delete a saved idea from SQLite by ID.
+    """
+    try:
+        def _delete() -> bool:
+            conn = sqlite3.connect(DB_PATH)
+            cur = conn.cursor()
+            cur.execute("DELETE FROM saved_ideas WHERE id = ?", (item_id,))
+            changes = conn.total_changes
+            conn.commit()
+            conn.close()
+            return changes > 0
+
+        success = await asyncio.to_thread(_delete)
+        if not success:
+            raise HTTPException(status_code=404, detail="Item not found")
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to delete saved idea: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete saved idea")
 
 # Mount Frontend application
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

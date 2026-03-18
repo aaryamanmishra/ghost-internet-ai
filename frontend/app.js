@@ -8,6 +8,28 @@ document.addEventListener('DOMContentLoaded', () => {
     const sourcesList = document.getElementById('sourcesList');
     const saveBtn = document.getElementById('saveBtn');
 
+    // Modal elements
+    const modal = document.getElementById('ideaModal');
+    const closeModal = document.getElementById('closeModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalBody = document.getElementById('modalBody');
+
+    function showModal(title, htmlContent) {
+        modalTitle.innerText = title;
+        modalBody.innerHTML = htmlContent;
+        modal.classList.remove('hidden');
+    }
+
+    closeModal.addEventListener('click', () => {
+        modal.classList.add('hidden');
+    });
+
+    window.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.classList.add('hidden');
+        }
+    });
+
     let lastDiscovery = null;
 
     form.addEventListener('submit', async (e) => {
@@ -83,6 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error('Save failed.');
             }
             await refreshSavedIdeas();
+            showModal("Success", "<p>Idea saved successfully!</p>");
         } catch (e) {
             console.error(e);
             alert('Failed to save idea locally.');
@@ -287,13 +310,56 @@ document.addEventListener('DOMContentLoaded', () => {
             items.forEach(item => {
                 const li = document.createElement('li');
                 const topic = item.topic || 'Untitled';
-                li.innerText = topic;
+                
+                const contentDiv = document.createElement('div');
+                contentDiv.className = 'saved-content';
+                contentDiv.innerText = topic;
 
                 const meta = document.createElement('div');
                 meta.className = 'saved-meta';
-                meta.innerText = item.timestamp ? `Saved: ${item.timestamp}` : '';
-                li.appendChild(meta);
+                meta.innerText = item.timestamp ? `Saved: ${new Date(item.timestamp).toLocaleString()}` : '';
+                contentDiv.appendChild(meta);
+                
+                contentDiv.addEventListener('click', () => {
+                    const ans = item.analysis || {};
+                    const prob = ans.revival_probability !== undefined ? `${ans.revival_probability}%` : '--%';
+                    const feas = ans.feasibility_score !== undefined ? `${ans.feasibility_score}/10` : '--/10';
+                    const imp = ans.impact_score !== undefined ? `${ans.impact_score}/10` : '--/10';
+                    const ideaText = ans.idea || 'No description available.';
+                    
+                    const html = `
+                        <div class="metrics-row" style="margin-bottom:15px;">
+                            <span class="modal-metric">Probability: ${prob}</span>
+                            <span class="modal-metric">Feasibility: ${feas}</span>
+                            <span class="modal-metric">Impact: ${imp}</span>
+                        </div>
+                        <p><strong>Idea:</strong> ${ideaText}</p>
+                    `;
+                    showModal(topic, html);
+                });
 
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-btn';
+                deleteBtn.innerHTML = '🗑️';
+                deleteBtn.title = "Delete Idea";
+                deleteBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if(confirm("Delete this idea?")) {
+                       try {
+                           const res = await fetch(`/saved/${item.id}`, { method: 'DELETE' });
+                           if (res.ok) {
+                               refreshSavedIdeas();
+                           } else {
+                               alert('Failed to delete idea.');
+                           }
+                       } catch (err) {
+                           console.error(err);
+                       }
+                    }
+                };
+                
+                li.appendChild(contentDiv);
+                li.appendChild(deleteBtn);
                 list.appendChild(li);
             });
         } catch (e) {

@@ -149,17 +149,26 @@
                     <h3 class="section-title">Detected Issues</h3>
                     <ul id="issuesList" class="simple-list"></ul>
                 </div>
+            </div> <!-- End resultsPanel -->
 
-                <div class="saved-section">
-                    <h3 class="section-title">Saved Ideas</h3>
-                    <ul id="savedIdeasList" class="saved-list"></ul>
-                </div>
+            <div class="saved-section">
+                <h3 class="section-title">Saved Ideas</h3>
+                <ul id="savedIdeasList" class="saved-list"></ul>
             </div>
         </main>
         
         <footer>
             <p>Powered by DigitalOcean Gradient AI &nbsp;•&nbsp; Hackathon Submission</p>
         </footer>
+    </div>
+
+    <!-- Modal Popup for Saved Ideas -->
+    <div id="ideaModal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-modal" id="closeModal">&times;</span>
+            <h2 id="modalTitle" class="section-title">Saved Idea</h2>
+            <div id="modalBody" class="modal-body-content"></div>
+        </div>
     </div>
 
     <script src="app.js"></script>
