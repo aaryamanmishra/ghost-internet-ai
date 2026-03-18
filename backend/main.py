@@ -555,6 +555,7 @@ STRICT OUTPUT RULES:
 - Do not output markdown, code fences, or any non-JSON text.
 - Use plain strings (no nested markdown).
 - Keep each analysis section concise but high-signal (4–8 sentences each).
+- YOUR SCORES (`revival_probability`, `feasibility_score`, `impact_score`) MUST BE DYNAMIC integers based strictly on your analysis, DO NOT copy the placeholder values!
 
 Return EXACTLY this JSON schema (same keys, compatible types):
 {{
@@ -569,9 +570,9 @@ Return EXACTLY this JSON schema (same keys, compatible types):
     "technology 2",
     "technology 3"
   ],
-  "revival_probability": 0,
-  "feasibility_score": 1,
-  "impact_score": 1,
+  "revival_probability": ,
+  "feasibility_score": ,
+  "impact_score": ,
   "key_breakthrough_needed": "What technological breakthrough would make this idea viable.",
   "innovation_tree": [
     "Original idea name",
